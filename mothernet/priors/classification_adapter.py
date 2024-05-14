@@ -207,3 +207,97 @@ class ClassificationAdapterPrior:
             x, y, y_ = x.detach(), y.detach(), y_.detach()
 
         return x, y, y_
+
+class RegressionAdapter:
+    # This class samples the number of features actually use (num_features_used), the number of samples
+    # adds NaN and potentially categorical features
+    # It's instantiated anew for each batch that's created
+    def __init__(self, base_prior, config):
+        self.h = sample_distributions(parse_distributions(config))
+
+        self.base_prior = base_prior
+        if self.h['num_classes'] == 0:
+            self.class_assigner = RegressionNormalized()
+        else:
+            raise NotImplementedError("num_classes must be 0 for regression")
+
+    def drop_for_reason(self, x, v):
+        nan_prob_sampler = CategoricalActivation(
+            ordered_p=0.0, categorical_p=1.0, keep_activation_size=False,
+            num_classes_sampler=lambda: 20)
+        d = nan_prob_sampler(x)
+        # TODO: Make a different ordering for each activation
+        x[d < torch.rand((1,), device=x.device) * 20 * self.h['nan_prob_no_reason'] * random.random()] = v
+        return x
+
+    def drop_for_no_reason(self, x, v):
+        x[torch.rand(x.shape, device=x.device) < random.random() * self.h['nan_prob_no_reason']] = v
+        return x
+
+    def __call__(self, batch_size, n_samples, num_features, device, epoch=None, single_eval_pos=None):
+        # num_features is constant for all batches, num_features used is passed down to wrapped priors to change number of features
+        args = {'device': device, 'n_samples': n_samples, 'num_features': self.h['num_features_used'],
+                'batch_size': batch_size, 'epoch': epoch, 'single_eval_pos': single_eval_pos}
+        x, y, y_ = self.base_prior.get_batch(**args)
+
+        assert x.shape[2] == self.h['num_features_used']
+
+        if self.h['nan_prob_no_reason']+self.h['nan_prob_a_reason']+self.h['nan_prob_unknown_reason'] > 0 and random.random() > 0.5:  # Only one out of two datasets should have nans
+            if random.random() < self.h['nan_prob_no_reason']:  # Missing for no reason
+                x = self.drop_for_no_reason(x, nan_handling_missing_for_no_reason_value(self.h['set_value_to_nan']))
+
+            if self.h['nan_prob_a_reason'] > 0 and random.random() > 0.5:  # Missing for a reason
+                x = self.drop_for_reason(x, nan_handling_missing_for_a_reason_value(self.h['set_value_to_nan']))
+
+            if self.h['nan_prob_unknown_reason'] > 0:  # Missing for unknown reason  and random.random() > 0.5
+                if random.random() < self.h['nan_prob_unknown_reason_reason_prior']:
+                    x = self.drop_for_no_reason(x, nan_handling_missing_for_unknown_reason_value(self.h['set_value_to_nan']))
+                else:
+                    x = self.drop_for_reason(x, nan_handling_missing_for_unknown_reason_value(self.h['set_value_to_nan']))
+
+        # Categorical features
+        categorical_features = []
+        if random.random() < self.h['categorical_feature_p']:
+            p = random.random()
+            for col in range(x.shape[2]):
+                num_unique_features = max(round(random.gammavariate(1, 10)), 2)
+                m = MulticlassRank(num_unique_features, ordered_p=0.3)
+                if random.random() < p:
+                    categorical_features.append(col)
+                    x[:, :, col] = m(x[:, :, col])
+
+        x = remove_outliers(x, categorical_features=categorical_features)
+        x, y = normalize_data(x), normalize_data(y)
+
+        # Cast to classification if enabled
+        y = self.class_assigner(y).float()
+
+        x = normalize_by_used_features_f(
+            x, self.h['num_features_used'], num_features)
+
+        # Append empty features if enabled
+        x = torch.cat(
+            [x, torch.zeros((x.shape[0], x.shape[1], num_features - self.h['num_features_used']),
+                            device=device)], -1)
+
+        mask = torch.isnan(y)
+        if mask.sum() > 0:
+            # print(f"NaN found: {y[mask]}")
+            y[mask] = 1e-5
+            # print(f"NaN fixed: {y[mask]}")
+            
+
+        return x, y, y  # x.shape = (T,B,H)
+
+class RegressionAdapterPrior:
+    def __init__(self, base_prior, **config):
+        self.base_prior = base_prior
+        self.config = config
+
+    def get_batch(self, batch_size, n_samples, num_features, device, epoch=None, single_eval_pos=None):
+        with torch.no_grad():
+            args = {'device': device, 'n_samples': n_samples, 'num_features': num_features, 'epoch': epoch, 'single_eval_pos': single_eval_pos}
+            x, y, y_ = RegressionAdapter(self.base_prior, self.config)(batch_size=batch_size, **args)
+            x, y, y_ = x.detach(), y.detach(), y_.detach()
+
+        return x, y, y_

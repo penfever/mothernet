@@ -81,12 +81,12 @@ def get_classification_prior_config(max_features, n_samples):
     """"
     Returns the configuration parameters for the tabular multiclass wrapper.
     """
-    max_num_classes = 10
+    max_num_classes = 0
     config_classsification_prior = {
         "nan_prob_unknown_reason_reason_prior": 0.5,
         "nan_prob_a_reason": 0.0,
         "max_num_classes": max_num_classes,
-        "num_classes": {'distribution': 'uniform_int', 'min': 2, 'max': max_num_classes},
+        "num_classes": {'distribution': 'uniform_int', 'min': 0, 'max': max_num_classes},
         # "noise_type": "Gaussian",  # NN unused?!
         "balanced": False,
         'output_multiclass_ordered_p': 0.,
@@ -101,11 +101,36 @@ def get_classification_prior_config(max_features, n_samples):
     }
     return {'prior': {'classification': config_classsification_prior}}
 
+def get_regression_prior_config(max_features, n_samples):
+    """"
+    Returns the configuration parameters for regression.
+    """
+    max_num_classes = 0
+    config_regression_prior = {
+        "nan_prob_unknown_reason_reason_prior": 0.5,
+        "nan_prob_a_reason": 0.0,
+        "max_num_classes": max_num_classes,
+        "num_classes": {'distribution': 'uniform_int', 'min': 0, 'max': max_num_classes},
+        # "noise_type": "Gaussian",  # NN unused?!
+        "balanced": False,
+        'output_multiclass_ordered_p': 0.,
+        'multiclass_max_steps': 10,
+        "multiclass_type": 'rank',
+        "num_features_used": {'distribution': 'uniform_int', 'min': 1, 'max': max_features},
+        'categorical_feature_p': .2,  # diff: .0
+        'nan_prob_no_reason': 0.0,
+        'nan_prob_unknown_reason': 0.0,
+        'nan_prob_a_reason': 0.0,
+        'set_value_to_nan': .1,
+    }
+    return {'prior': {'regression': config_regression_prior}}
 
 def get_prior_config_causal(max_features=100):
     config_general = get_general_config(max_features, n_samples=1024+128)
     config_classsification_prior = get_classification_prior_config(max_features, n_samples=1024+128)
     config = merge_dicts(config_general, config_classsification_prior)
+    config_regression_prior = get_regression_prior_config(max_features, n_samples=1024+128)
+    config = merge_dicts(config_general, config_regression_prior)
     return config
 
 
@@ -147,7 +172,8 @@ def get_base_config():
     config['transformer'].update({
         'recompute_attn': True,
         'pre_norm': False,
-        'y_encoder': "one_hot",
+        # 'y_encoder': "one_hot",
+        'y_encoder' : 'linear',
         'efficient_eval_masking': True,
         'input_normalization': False,
         'tabpfn_zero_weights': True,

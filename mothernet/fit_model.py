@@ -47,7 +47,6 @@ def main(argv):
     if args.orchestration.seed_everything:
         import lightning as L
         L.seed_everything(42)
-
     # promote general group to top level
     config.update(config.pop('general'))
     config['num_gpus'] = 1

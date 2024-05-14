@@ -2,7 +2,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 
 import mothernet.priors as priors
-from mothernet.priors import ClassificationAdapterPrior, BagPrior, BooleanConjunctionPrior
+from mothernet.priors import ClassificationAdapterPrior, BagPrior, BooleanConjunctionPrior, RegressionAdapterPrior
 
 
 class PriorDataLoader(DataLoader):
@@ -41,16 +41,20 @@ class PriorDataLoader(DataLoader):
 def get_dataloader(prior_config, dataloader_config, device):
 
     prior_type = prior_config['prior_type']
-    gp_flexible = ClassificationAdapterPrior(priors.GPPrior(prior_config['gp']), **prior_config['classification'])
-    mlp_flexible = ClassificationAdapterPrior(priors.MLPPrior(prior_config['mlp']), **prior_config['classification'])
+    if 'regression' in prior_type:
+        gp_flexible = RegressionAdapterPrior(priors.GPPrior(prior_config['gp']), **prior_config['regression'])
+        mlp_flexible = RegressionAdapterPrior(priors.MLPPrior(prior_config['mlp']), **prior_config['regression'])
+    else:
+        gp_flexible = ClassificationAdapterPrior(priors.GPPrior(prior_config['gp']), **prior_config['classification'])
+        mlp_flexible = ClassificationAdapterPrior(priors.MLPPrior(prior_config['mlp']), **prior_config['classification'])
 
-    if prior_type == 'prior_bag':
+    if 'prior_bag' in prior_type:
         # Prior bag combines priors
         prior = BagPrior(base_priors={'gp': gp_flexible, 'mlp': mlp_flexible},
                          prior_weights={'mlp': 0.961, 'gp': 0.039})
-    elif prior_type == "boolean_only":
+    elif "boolean_only" in prior_type:
         prior = BooleanConjunctionPrior(hyperparameters=prior_config['boolean'])
-    elif prior_type == "bag_boolean":
+    elif "bag_boolean" in prior_type:
         boolean = BooleanConjunctionPrior(hyperparameters=prior_config['boolean'])
         prior = BagPrior(base_priors={'gp': gp_flexible, 'mlp': mlp_flexible, 'boolean': boolean},
                          prior_weights={'mlp': 0.9, 'gp': 0.02, 'boolean': 0.08})

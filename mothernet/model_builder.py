@@ -27,6 +27,8 @@ def get_criterion(max_num_classes):
         loss = nn.BCEWthLogitsLoss(reduction='none')
     elif max_num_classes > 2:
         loss = nn.CrossEntropyLoss(reduction='none')
+    elif max_num_classes == 0:
+        loss = nn.MSELoss(reduction='none')
     else:
         raise ValueError(f"Invalid number of classes: {max_num_classes}")
     return loss
@@ -168,6 +170,10 @@ def get_model(config, device, should_train=True, verbose=False, model_state=None
     verbose_train, verbose_prior = verbose >= 1, verbose >= 2
     config['verbose'] = verbose_prior
 
+    #regression compatibilty
+    if config['prior']['classification'].get('max_num_classes', None) is None:
+        config['prior']['classification'] = config['prior']['regression']
+
     criterion = get_criterion(config['prior']['classification']['max_num_classes'])
 
     # backwards compatibility for cases where absence of parameter doesn't correspond to current default
@@ -180,7 +186,6 @@ def get_model(config, device, should_train=True, verbose=False, model_state=None
             config['model_type'] = config['model_maker']
         else:
             config['model_type'] = 'tabpfn'
-
     dl = get_dataloader(prior_config=config['prior'], dataloader_config=config['dataloader'], device=device)
 
     y_encoder = get_y_encoder(config)
